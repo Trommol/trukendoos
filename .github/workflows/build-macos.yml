@@ -1,0 +1,41 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          xcodebuild -version
+
+      - name: Build package and DMG
+        run: |
+          chmod +x tools/package_macos.sh
+          tools/package_macos.sh "${{ matrix.arch }}"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: trukendoos-mac-${{ matrix.arch }}
+          path: |
+            dist/macos-${{ matrix.arch }}/trukendoos-mac-${{ matrix.arch }}.dmg
+            dist/macos-${{ matrix.arch }}/trukendoos-mac-${{ matrix.arch }}.pkg

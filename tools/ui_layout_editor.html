@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>trukendoos UI Layout Editor</title>
+  <style>
+    :root {
+      --panel: #151515;
+      --panel2: #222;
+      --text: #f5e9c9;
+      --muted: #9f9279;
+      --accent: #ff3f7d;
+      --mint: #62f4c8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #080807;
+      color: var(--text);
+      font-family: Segoe UI, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      height: 100vh;
+    }
+
+    .stageWrap {
+      overflow: auto;
+      padding: 24px;
+      background:
+        linear-gradient(45deg, #111 25%, transparent 25%),
+        linear-gradient(-45deg, #111 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #111 75%),
+        linear-gradient(-45deg, transparent 75%, #111 75%);
+      background-size: 32px 32px;
+      background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+    }
+
+    #stage {
+      position: relative;
+      width: 1480px;
+      height: 940px;
+      background: #111;
+      transform-origin: top left;
+      box-shadow: 0 10px 60px #000;
+      user-select: none;
+    }
+
+    .item {
+      position: absolute;
+      cursor: move;
+      outline: 1px solid transparent;
+    }
+
+    .item.selected {
+      outline: 2px solid var(--accent);
+      box-shadow: 0 0 0 1px #000, 0 0 22px rgba(255, 63, 125, 0.45);
+    }
+
+    .item.locked { cursor: default; }
+
+    .item img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+      object-fit: contain;
+    }
+
+    .item.fill img { object-fit: fill; }
+
+    .controlMock {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-rows: 20px 1fr 22px;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    .controlMock .label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f7e8c8;
+      text-shadow: 0 1px 2px #000;
+    }
+
+    .controlMock .knobArea {
+      position: relative;
+      width: min(100%, 92px);
+      aspect-ratio: 1;
+    }
+
+    .controlMock .knobArea img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .controlMock .arc {
+      position: absolute;
+      inset: -4px;
+      border: 3px solid transparent;
+      border-left-color: var(--accent);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      transform: rotate(-40deg);
+      opacity: 0.9;
+    }
+
+    .controlMock .value {
+      min-width: 76px;
+      height: 20px;
+      padding: 1px 8px;
+      background: #100b08;
+      color: #fff1bd;
+      border: 1px solid #5e4637;
+      font-size: 13px;
+      text-align: center;
+      line-height: 18px;
+      text-shadow: 0 1px 1px #000;
+    }
+
+    .toggleMock, .comboMock, .screenMock {
+      width: 100%;
+      height: 100%;
+      border-radius: 5px;
+      border: 1px solid #65503e;
+      background: #17110e;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-weight: 700;
+      color: #f7e8c8;
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    .toggleMock::before {
+      content: "";
+      width: 15px;
+      height: 15px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: #ff5a36;
+      box-shadow: 0 0 10px rgba(255, 90, 54, 0.45);
+    }
+
+    .comboMock {
+      background: #263838;
+      justify-content: space-between;
+    }
+
+    .comboMock::after {
+      content: "⌄";
+      font-size: 18px;
+      color: #fff1bd;
+    }
+
+    .screenMock {
+      display: block;
+      padding: 12px;
+      background: repeating-linear-gradient(0deg, #061817 0 2px, #073432 3px 4px);
+      border: 5px solid #090706;
+      box-shadow: inset 0 0 18px #001;
+    }
+
+    .screenMock::before {
+      content: "OUTPUT SCOPE";
+      display: block;
+      color: #d7c994;
+      font-size: 11px;
+      margin-bottom: 34px;
+    }
+
+    .screenMock::after {
+      content: "";
+      display: block;
+      height: 5px;
+      border-radius: 10px;
+      background: #62f4c8;
+      box-shadow: 0 0 10px #62f4c8;
+    }
+
+    .side {
+      background: var(--panel);
+      border-left: 1px solid #333;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    input, select, button, textarea {
+      width: 100%;
+      background: #242424;
+      color: var(--text);
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 7px 8px;
+      font: inherit;
+    }
+
+    input[type="checkbox"] {
+      width: auto;
+    }
+
+    button {
+      cursor: pointer;
+      background: #30221d;
+      border-color: #76513d;
+      font-weight: 800;
+    }
+
+    button:hover { border-color: var(--accent); }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    textarea {
+      height: 180px;
+      resize: vertical;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      white-space: pre;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      margin: 10px 0;
+    }
+
+    .divider {
+      height: 1px;
+      background: #333;
+      margin: 14px 0;
+    }
+
+    .list {
+      height: 210px;
+      overflow: auto;
+      background: #101010;
+      border: 1px solid #333;
+      border-radius: 4px;
+    }
+
+    .list button {
+      border: 0;
+      border-bottom: 1px solid #262626;
+      border-radius: 0;
+      text-align: left;
+      background: transparent;
+      font-size: 12px;
+      padding: 6px 8px;
+    }
+
+    .list button.active {
+      background: #3b1724;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="stageWrap">
+      <div id="stage"></div>
+    </div>
+
+    <aside class="side">
+      <h1>trukendoos layout editor</h1>
+      <div class="hint">
+        Drag elements directly. Hold <b>Shift</b> while dragging to resize. Arrow keys nudge selected items, Shift+arrows nudges by 10px.
+      </div>
+
+      <div class="row">
+        <label>Mode</label>
+        <select id="modeSelect">
+          <option value="rust">Rust</option>
+          <option value="melt">Melt</option>
+          <option value="glass">Glass</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>Zoom</label>
+        <input id="zoom" type="range" min="0.35" max="1.25" step="0.05" value="0.75">
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="list" id="itemList"></div>
+
+      <div class="divider"></div>
+
+      <div class="row"><label>ID</label><input id="idField" readonly></div>
+      <div class="row"><label>X</label><input id="xField" type="number" step="1"></div>
+      <div class="row"><label>Y</label><input id="yField" type="number" step="1"></div>
+      <div class="row"><label>W</label><input id="wField" type="number" step="1"></div>
+      <div class="row"><label>H</label><input id="hField" type="number" step="1"></div>
+      <div class="row"><label>Opacity</label><input id="opacityField" type="range" min="0" max="1" step="0.01"></div>
+      <div class="row"><label>Z</label><input id="zField" type="number" step="1"></div>
+      <div class="row"><label>Visible</label><input id="visibleField" type="checkbox"></div>
+
+      <div class="buttons">
+        <button id="copyJson">Copy JSON</button>
+        <button id="copyCpp">Copy C++</button>
+        <button id="reset">Reset</button>
+        <button id="saveLocal">Save local</button>
+      </div>
+
+      <textarea id="output" spellcheck="false"></textarea>
+    </aside>
+  </div>
+
+  <script>
+    const assets = "../Assets/ui/";
+    const stage = document.getElementById("stage");
+    const modeSelect = document.getElementById("modeSelect");
+    const fields = {
+      id: document.getElementById("idField"),
+      x: document.getElementById("xField"),
+      y: document.getElementById("yField"),
+      w: document.getElementById("wField"),
+      h: document.getElementById("hField"),
+      opacity: document.getElementById("opacityField"),
+      z: document.getElementById("zField"),
+      visible: document.getElementById("visibleField"),
+    };
+
+    const baseLayout = [
+      image("backplate", "backplate.png", 0, 0, 1480, 940, 0, true, "fill"),
+      image("presetPlate", "preset_plate.png", 520, 48, 430, 78, 2, true, "fill"),
+      mock("presetBox", "combo", 578, 92, 252, 28, 20, true, "Preset"),
+      mock("saveButton", "toggle", 838, 92, 72, 28, 20, true, "SAVE"),
+      image("inputBadge", "input_badge.png", 20, 66, 140, 140, 2),
+      image("outputBadge", "output_badge.png", 1320, 66, 140, 140, 2),
+      control("inputGain", "knob_global.png", "Input Gain", 91, 110, 76, 100, 30, true),
+      control("outputGain", "knob_global.png", "Output", 1390, 110, 76, 100, 30, true),
+      mock("fftBox", "combo", 520, 168, 150, 28, 20, true, "Normal 2048"),
+      mock("inputBox", "combo", 686, 168, 170, 28, 20, true, "Input 2 Mono"),
+
+      image("headerSlot1", "header_rust.png", 84, 146, 310, 165, 4),
+      image("headerSlot2", "header_melt.png", 84, 372, 310, 165, 4),
+      image("headerSlot3", "header_glass.png", 84, 594, 310, 165, 4),
+
+      image("globalBusPlate", "global_bus_plate.png", 408, 804, 664, 86, 2, true, "fill"),
+      control("highPass", "knob_global.png", "High Pass", 515, 800, 76, 100, 30, true),
+      control("lowPass", "knob_global.png", "Low Pass", 665, 800, 76, 100, 30, true),
+      control("mix", "knob_global.png", "Mix", 1188, 800, 76, 100, 30, true),
+      control("width", "knob_global.png", "Width", 1322, 800, 76, 100, 30, true),
+
+      image("harmonizerPedal", "pedal_harmonizer.png", 1092, 265, 310, 470, 3),
+      mock("harm1Enable", "toggle", 1135, 290, 150, 26, 24, true, "Harmonizer"),
+      control("harm1Pitch", "knob_harmonizer.png", "Pitch", 1170, 372, 76, 100, 30, true),
+      control("harm1Mix", "knob_harmonizer.png", "H-Mix", 1305, 372, 76, 100, 30, true),
+      mock("harm2Enable", "toggle", 1135, 515, 170, 26, 24, true, "Harmonizer 2"),
+      control("harm2Pitch", "knob_harmonizer.png", "Pitch 2", 1170, 590, 76, 100, 30, true),
+      control("harm2Mix", "knob_harmonizer.png", "H2-Mix", 1305, 590, 76, 100, 30, true),
+      mock("freeze", "toggle", 1245, 690, 120, 26, 24, true, "Freeze"),
+    ];
+
+    const modeLayouts = {
+      rust: [
+        image("modePedal", "pedal_rust.png", 506, 206, 460, 650, 3),
+        control("corrode", "knob_rust.png", "Corrode", 615, 280, 94, 120, 30),
+        control("fold", "knob_rust.png", "Fold", 738, 280, 94, 120, 30),
+        control("redux", "knob_rust.png", "Redux", 862, 280, 94, 120, 30),
+        control("edge", "knob_rust.png", "Edge", 650, 486, 94, 120, 30),
+        control("ring", "knob_rust.png", "Ring", 826, 486, 94, 120, 30),
+        mock("edgePre", "toggle", 646, 618, 184, 28, 30, true, "Edge Pre"),
+        mock("scope", "screen", 585, 646, 300, 120, 20, true, ""),
+      ],
+      melt: [
+        image("modePedal", "pedal_melt.png", 506, 206, 460, 650, 3),
+        control("morph", "knob_melt.png", "Morph", 625, 292, 94, 120, 30),
+        control("bandSpread", "knob_melt.png", "Band Spread", 850, 292, 94, 120, 30),
+        control("motion", "knob_melt.png", "Motion", 625, 500, 94, 120, 30),
+        control("depth", "knob_melt.png", "Depth", 850, 500, 94, 120, 30),
+        mock("scope", "screen", 585, 646, 300, 120, 20, true, ""),
+      ],
+      glass: [
+        image("modePedal", "pedal_glass.png", 506, 206, 460, 650, 3),
+        control("time", "knob_glass.png", "Time", 612, 275, 94, 120, 30),
+        control("feedback", "knob_glass.png", "Feedback", 736, 275, 94, 120, 30),
+        control("texture", "knob_glass.png", "Texture", 860, 275, 94, 120, 30),
+        control("drift", "knob_glass.png", "Drift", 612, 444, 94, 120, 30),
+        control("shatter", "knob_glass.png", "Shatter", 736, 444, 94, 120, 30),
+        control("sway", "knob_glass.png", "Sway", 860, 444, 94, 120, 30),
+        control("dryWet", "knob_glass.png", "Dry/Wet", 736, 548, 94, 120, 30),
+        mock("scope", "screen", 585, 646, 300, 120, 20, true, ""),
+      ],
+    };
+
+    function image(id, src, x, y, w, h, z = 10, visible = true, fit = "contain") {
+      return { id, type: "image", src, x, y, w, h, z, opacity: 1, visible, fit };
+    }
+
+    function control(id, src, label, cx, y, w, h, z = 10, visible = true) {
+      return { id, type: "control", src, label, x: Math.round(cx - w / 2), y, w, h, z, opacity: 1, visible };
+    }
+
+    function mock(id, kind, x, y, w, h, z = 10, visible = true, text = "") {
+      return { id, type: "mock", kind, text, x, y, w, h, z, opacity: 1, visible };
+    }
+
+    let layout = loadLayout();
+    let selectedId = "modePedal";
+    let drag = null;
+
+    function loadLayout() {
+      const saved = localStorage.getItem("trukendoosLayout");
+      if (saved) {
+        try { return JSON.parse(saved); } catch {}
+      }
+      return { base: structuredClone(baseLayout), modes: structuredClone(modeLayouts) };
+    }
+
+    function activeItems() {
+      return [...layout.base, ...layout.modes[modeSelect.value]];
+    }
+
+    function selectedItem() {
+      return activeItems().find(i => i.id === selectedId);
+    }
+
+    function render() {
+      stage.innerHTML = "";
+      for (const item of activeItems().sort((a, b) => a.z - b.z)) {
+        if (!item.visible) continue;
+        const el = document.createElement("div");
+        el.className = "item";
+        if (item.id === selectedId) el.classList.add("selected");
+        if (item.fit === "fill") el.classList.add("fill");
+        el.dataset.id = item.id;
+        Object.assign(el.style, {
+          left: item.x + "px",
+          top: item.y + "px",
+          width: item.w + "px",
+          height: item.h + "px",
+          opacity: item.opacity,
+          zIndex: item.z,
+        });
+
+        if (item.type === "image") {
+          const img = document.createElement("img");
+          img.src = assets + item.src;
+          el.appendChild(img);
+        } else if (item.type === "control") {
+          el.innerHTML = `<div class="controlMock">
+            <div class="label">${item.label}</div>
+            <div class="knobArea"><img src="${assets + item.src}"><div class="arc"></div></div>
+            <div class="value">0.0</div>
+          </div>`;
+        } else {
+          const mock = document.createElement("div");
+          mock.className = item.kind + "Mock";
+          mock.textContent = item.text;
+          el.appendChild(mock);
+        }
+
+        el.addEventListener("pointerdown", startDrag);
+        stage.appendChild(el);
+      }
+      renderList();
+      renderFields();
+    }
+
+    function renderList() {
+      const list = document.getElementById("itemList");
+      list.innerHTML = "";
+      for (const item of activeItems()) {
+        const button = document.createElement("button");
+        button.textContent = item.id;
+        button.className = item.id === selectedId ? "active" : "";
+        button.onclick = () => { selectedId = item.id; render(); };
+        list.appendChild(button);
+      }
+    }
+
+    function renderFields() {
+      const item = selectedItem();
+      if (!item) return;
+      fields.id.value = item.id;
+      fields.x.value = item.x;
+      fields.y.value = item.y;
+      fields.w.value = item.w;
+      fields.h.value = item.h;
+      fields.opacity.value = item.opacity;
+      fields.z.value = item.z;
+      fields.visible.checked = item.visible;
+    }
+
+    function startDrag(event) {
+      const item = activeItems().find(i => i.id === event.currentTarget.dataset.id);
+      selectedId = item.id;
+      drag = {
+        pointer: event.pointerId,
+        resize: event.shiftKey,
+        startX: event.clientX,
+        startY: event.clientY,
+        item,
+        x: item.x,
+        y: item.y,
+        w: item.w,
+        h: item.h,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      render();
+    }
+
+    stage.addEventListener("pointermove", event => {
+      if (!drag) return;
+      const zoom = Number(document.getElementById("zoom").value);
+      const dx = Math.round((event.clientX - drag.startX) / zoom);
+      const dy = Math.round((event.clientY - drag.startY) / zoom);
+      if (drag.resize) {
+        drag.item.w = Math.max(8, drag.w + dx);
+        drag.item.h = Math.max(8, drag.h + dy);
+      } else {
+        drag.item.x = drag.x + dx;
+        drag.item.y = drag.y + dy;
+      }
+      render();
+    });
+
+    window.addEventListener("pointerup", () => { drag = null; });
+
+    for (const [key, input] of Object.entries(fields)) {
+      if (key === "id") continue;
+      input.addEventListener("input", () => {
+        const item = selectedItem();
+        if (!item) return;
+        if (key === "visible") item.visible = input.checked;
+        else item[key] = key === "opacity" ? Number(input.value) : Math.round(Number(input.value));
+        render();
+      });
+    }
+
+    window.addEventListener("keydown", event => {
+      const item = selectedItem();
+      if (!item || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      const step = event.shiftKey ? 10 : 1;
+      if (event.key === "ArrowLeft") item.x -= step;
+      if (event.key === "ArrowRight") item.x += step;
+      if (event.key === "ArrowUp") item.y -= step;
+      if (event.key === "ArrowDown") item.y += step;
+      event.preventDefault();
+      render();
+    });
+
+    document.getElementById("zoom").addEventListener("input", event => {
+      stage.style.transform = `scale(${event.target.value})`;
+    });
+
+    modeSelect.addEventListener("change", () => {
+      selectedId = "modePedal";
+      render();
+    });
+
+    document.getElementById("saveLocal").onclick = () => {
+      localStorage.setItem("trukendoosLayout", JSON.stringify(layout));
+      document.getElementById("output").value = "Saved to browser localStorage.";
+    };
+
+    document.getElementById("reset").onclick = () => {
+      if (!confirm("Reset editor layout to the built-in starting positions?")) return;
+      localStorage.removeItem("trukendoosLayout");
+      layout = { base: structuredClone(baseLayout), modes: structuredClone(modeLayouts) };
+      selectedId = "modePedal";
+      render();
+    };
+
+    document.getElementById("copyJson").onclick = async () => {
+      const text = JSON.stringify(layout, null, 2);
+      document.getElementById("output").value = text;
+      await navigator.clipboard.writeText(text).catch(() => {});
+    };
+
+    document.getElementById("copyCpp").onclick = async () => {
+      const text = makeCppSnippet();
+      document.getElementById("output").value = text;
+      await navigator.clipboard.writeText(text).catch(() => {});
+    };
+
+    function rect(name, item) {
+      return `const auto ${name} = juce::Rectangle<float>(${item.x}.0f, ${item.y}.0f, ${item.w}.0f, ${item.h}.0f);`;
+    }
+
+    function centre(name, item) {
+      return `{ ${Math.round(item.x + item.w / 2)}, ${item.y} } // ${name}`;
+    }
+
+    function makeCppSnippet() {
+      const lines = [];
+      lines.push("// Paint rectangles");
+      for (const item of activeItems().filter(i => i.type === "image" || i.kind === "screen")) {
+        lines.push(rect(item.id, item));
+      }
+      lines.push("");
+      lines.push("// Control centres/topY for resized()");
+      for (const item of activeItems().filter(i => i.type === "control")) {
+        lines.push(centre(item.id, item));
+      }
+      lines.push("");
+      lines.push("// Widget bounds");
+      for (const item of activeItems().filter(i => i.type === "mock" && i.kind !== "screen")) {
+        lines.push(`${item.id}.setBounds(${item.x}, ${item.y}, ${item.w}, ${item.h});`);
+      }
+      return lines.join("\n");
+    }
+
+    stage.style.transform = "scale(0.75)";
+    render();
+  </script>
+</body>
+</html>

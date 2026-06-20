@@ -1,0 +1,21 @@
+;*** BEGIN **********************************************************
+;**                                                                **
+;** Automatically generated on: Sat Jun 20 17:31:21 2026           **
+;**                                                                **
+;** MakeCAB Version: 5.00                                 **
+;**                                                                **
+;*** BEGIN **********************************************************
+
+
+[SourceDisksNames]
+1=Application Source Media,C:\Users\tremm\Documents\VST3\dist\~trukendoos-windows-installer.CAB,0
+
+[SourceDisksFiles]
+payload.zip=1,,96279373,0
+install-trukendoos-gui.ps1=1,,5525,0
+launch-installer.bat=1,,101,0
+;*** END ************************************************************
+;**                                                                **
+;** Automatically generated on: Sat Jun 20 17:31:21 2026           **
+;**                                                                **
+;*** END ************************************************************
