@@ -217,16 +217,7 @@ void SpectralRotEngine::process(juce::AudioBuffer<float>& buffer)
                 wet = processGonkRing(state, wet, clamp01((parameters.subGuardHz - 20.0f) / 240.0f));
                 wet = processRustBitcrush(state, wet);
             }
-            const auto outputGain = parameters.applyOutputGain ? parameters.outputGain : 1.0f;
-            auto output = (input * (1.0f - parameters.mix)) + (wet * parameters.mix);
-
-            if (parameters.applyOutputGain)
-            {
-                output = processHighPass(state, output);
-                output = processLowPass(state, output);
-            }
-
-            data[sample] = output * outputGain;
+            data[sample] = wet;
         }
     }
 
@@ -234,11 +225,10 @@ void SpectralRotEngine::process(juce::AudioBuffer<float>& buffer)
         applyWidth(buffer, channels, samples);
 }
 
-void SpectralRotEngine::processGlobalBus(juce::AudioBuffer<float>& buffer)
+void SpectralRotEngine::processGlobalInput(juce::AudioBuffer<float>& buffer)
 {
     const auto channels = juce::jmin(buffer.getNumChannels(), static_cast<int>(channelStates.size()));
     const auto samples = buffer.getNumSamples();
-    const auto mix = juce::jlimit(0.0f, 1.0f, parameters.mix);
 
     for (int channel = 0; channel < channels; ++channel)
     {
@@ -249,15 +239,51 @@ void SpectralRotEngine::processGlobalBus(juce::AudioBuffer<float>& buffer)
         {
             const auto dry = data[sample];
             auto wet = dry * parameters.inputGain;
-            wet = parameters.applyHarmonizer ? processHarmonizer(state, wet, false) : wet;
-            wet = parameters.applyHarmonizer ? processHarmonizer(state, wet, true) : wet;
-            wet = processHighPass(state, wet);
-            wet = processLowPass(state, wet);
-            data[sample] = ((dry * (1.0f - mix)) + (wet * mix)) * parameters.outputGain;
+            wet = processHarmonizer(state, wet, false);
+            wet = processHarmonizer(state, wet, true);
+            data[sample] = wet;
+        }
+    }
+}
+
+void SpectralRotEngine::processGlobalBus(juce::AudioBuffer<float>& buffer)
+{
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf(buffer, true);
+
+    processGlobalInput(buffer);
+    processGlobalOutput(buffer, dryBuffer);
+}
+
+void SpectralRotEngine::processGlobalOutput(juce::AudioBuffer<float>& wetBuffer, const juce::AudioBuffer<float>& dryBuffer)
+{
+    const auto channels = juce::jmin(juce::jmin(wetBuffer.getNumChannels(), dryBuffer.getNumChannels()),
+                                     static_cast<int>(channelStates.size()));
+    const auto samples = juce::jmin(wetBuffer.getNumSamples(), dryBuffer.getNumSamples());
+    const auto mix = juce::jlimit(0.0f, 1.0f, parameters.mix);
+
+    for (int channel = 0; channel < channels; ++channel)
+    {
+        auto* wet = wetBuffer.getWritePointer(channel);
+        auto& state = channelStates[static_cast<size_t>(channel)];
+
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            wet[sample] = processHighPass(state, wet[sample]);
+            wet[sample] = processLowPass(state, wet[sample]);
         }
     }
 
-    applyWidth(buffer, channels, samples);
+    applyWidth(wetBuffer, channels, samples);
+
+    for (int channel = 0; channel < channels; ++channel)
+    {
+        auto* wet = wetBuffer.getWritePointer(channel);
+        const auto* dry = dryBuffer.getReadPointer(channel);
+
+        for (int sample = 0; sample < samples; ++sample)
+            wet[sample] = ((dry[sample] * (1.0f - mix)) + (wet[sample] * mix)) * parameters.outputGain;
+    }
 }
 
 void SpectralRotEngine::applyWidth(juce::AudioBuffer<float>& buffer, int channels, int samples)
@@ -316,9 +342,7 @@ float SpectralRotEngine::processGlassDelaySample(ChannelState& state, float inpu
         ? 0.9995f
         : juce::jlimit(0.0f, 0.96f, parameters.rot * 0.94f);
 
-    state.glassDelay[static_cast<size_t>(state.glassDelayWritePosition)] = parameters.freezeEnabled
-        ? delayed * 0.9995f
-        : input + delayed * feedback;
+    state.glassDelay[static_cast<size_t>(state.glassDelayWritePosition)] = input + delayed * feedback;
     state.glassDelayWritePosition = (state.glassDelayWritePosition + 1) % size;
 
     return delayed;
@@ -766,14 +790,15 @@ void SpectralRotEngine::processFrame(ChannelState& state)
             const auto bubble = std::max(0.0f, -texture);
             const auto pitchDrift = std::abs(parameters.tilt);
             const auto shatter = clamp01((parameters.subGuardHz - 20.0f) / 240.0f);
-            const auto reverse = parameters.glassReverse;
+            const auto reverse = std::pow(clamp01(parameters.glassReverse), 0.45f);
             const auto realIndex = static_cast<size_t>(bin * 2);
             const auto imagIndex = realIndex + 1;
             const auto real = state.fftData[realIndex];
             const auto imag = state.fftData[imagIndex];
 
+            const auto delaySeconds = 0.035f + std::pow(juce::jlimit(0.0f, 1.0f, delayAmount), 1.55f) * 1.45f;
             const auto baseDelayFrames = juce::jlimit(1, maxSpectralDelayFrames - 1,
-                static_cast<int>(std::round(1.0f + std::pow(delayAmount, 1.7f) * static_cast<float>(maxSpectralDelayFrames - 2))));
+                static_cast<int>(std::round((delaySeconds * static_cast<float>(sampleRate)) / static_cast<float>(juce::jmax(1, hopSize)))));
             const auto stereoOffset = static_cast<int>(std::round(state.stereoSign * shatter * 5.0f));
             const auto delayFrames = juce::jlimit(1, maxSpectralDelayFrames - 1, baseDelayFrames + stereoOffset);
 
@@ -787,10 +812,12 @@ void SpectralRotEngine::processFrame(ChannelState& state)
             const auto shatterBin = juce::jlimit(1, numBins - 2, bin + static_cast<int>(std::round(shatterScatter * textureScatter)));
 
             const auto cleanIndex = static_cast<size_t>(glassDelayIndex(delayFrames, bin, state.spectralHistoryWritePosition));
-            const auto reverseWindow = juce::jlimit(4, maxSpectralDelayFrames - 1,
-                static_cast<int>(8.0f + std::pow(delayAmount, 0.82f) * static_cast<float>(maxSpectralDelayFrames - 9)));
+            const auto reverseWindow = juce::jlimit(8, maxSpectralDelayFrames - 1,
+                static_cast<int>(14.0f + std::pow(delayAmount, 0.68f) * static_cast<float>(maxSpectralDelayFrames - 15)));
+            const auto reverseCycle = static_cast<int>((state.frameCounter * (1 + static_cast<int>(delayAmount * 2.0f)))
+                % static_cast<unsigned int>(juce::jmax(2, reverseWindow)));
             const auto reverseSweep = juce::jlimit(1, maxSpectralDelayFrames - 1,
-                1 + static_cast<int>((state.frameCounter * (1 + static_cast<int>(delayAmount * 1.0f))) % static_cast<unsigned int>(juce::jmax(2, reverseWindow))));
+                juce::jmax(1, reverseWindow - reverseCycle));
             const auto textureIndex = static_cast<size_t>(glassDelayIndex(delayFrames, shatterBin, state.spectralHistoryWritePosition));
             const auto driftIndex = static_cast<size_t>(glassDelayIndex(delayFrames, driftBin, state.spectralHistoryWritePosition));
             const auto reverseIndex = static_cast<size_t>(glassDelayIndex(reverseSweep, driftBin, state.spectralHistoryWritePosition));
@@ -819,25 +846,20 @@ void SpectralRotEngine::processFrame(ChannelState& state)
             const auto shatterMix = shatter * (0.08f + bubble * 0.86f + smear * 0.18f);
             const auto shatteredReal = juce::jmap(shatterMix, driftedReal, textureReal);
             const auto shatteredImag = juce::jmap(shatterMix, driftedImag, textureImag);
-            const auto swaySoftener = 1.0f - reverse * (0.18f + (1.0f - delayAmount) * 0.42f);
+            const auto swaySoftener = 1.0f - reverse * (0.06f + (1.0f - delayAmount) * 0.18f);
             const auto delayReal = juce::jmap(reverse, shatteredReal, reverseReal * swaySoftener);
             const auto delayImag = juce::jmap(reverse, shatteredImag, reverseImag * swaySoftener);
             const auto delayMag = safeMagnitude(delayReal, delayImag);
-            const auto feedback = feedbackAmount >= 0.999f
-                ? 0.9995f
-                : juce::jlimit(0.0f, 0.985f, feedbackAmount * 0.94f);
             const auto repeatLevel = 0.72f + feedbackAmount * 0.18f;
             const auto writeIndex = static_cast<size_t>(state.spectralHistoryWritePosition * numBins + bin);
-            const auto inputSend = parameters.freezeEnabled ? 0.0f : 0.82f;
-            const auto feedbackSend = parameters.freezeEnabled ? 0.9995f : feedback;
-            const auto feedbackTone = juce::Decibels::decibelsToGain(smear * (binNorm - 0.45f) * 2.5f - bubble * (binNorm - 0.35f) * 2.0f);
+            const auto inputSend = 0.82f;
 
             processed = original + delayMag * repeatLevel * (0.95f + bubble * 0.26f + smear * 0.34f);
             state.fftData[realIndex] = real + delayReal * repeatLevel;
             state.fftData[imagIndex] = imag + delayImag * repeatLevel;
 
-            state.glassFeedbackReal[writeIndex] = real * inputSend + cleanReal * feedbackSend * feedbackTone;
-            state.glassFeedbackImag[writeIndex] = imag * inputSend + cleanImag * feedbackSend * feedbackTone;
+            state.glassFeedbackReal[writeIndex] = real * inputSend;
+            state.glassFeedbackImag[writeIndex] = imag * inputSend;
         }
 
         state.processedMagnitudes[static_cast<size_t>(bin)] = processed;

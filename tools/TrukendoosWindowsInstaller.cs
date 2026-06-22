@@ -38,7 +38,7 @@ internal static class TrukendoosWindowsInstaller
 
         public InstallerForm()
         {
-            Text = "trukendoos installer";
+            Text = "trukendoos installer / updater";
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -59,7 +59,7 @@ internal static class TrukendoosWindowsInstaller
 
             var subtitle = new Label
             {
-                Text = "tijd voor een trucje!",
+                Text = ExistingInstallDetected() ? "update found install - tijd voor een trucje!" : "tijd voor een trucje!",
                 AutoSize = true,
                 Location = new Point(28, 60),
                 Font = new Font("Segoe UI", 9.0f, FontStyle.Bold),
@@ -67,7 +67,7 @@ internal static class TrukendoosWindowsInstaller
                 BackColor = BackColor
             };
 
-            vst3Check.Text = "Install VST3 plugin";
+            vst3Check.Text = ExistingVst3Installed() ? "Update VST3 plugin" : "Install VST3 plugin";
             vst3Check.Checked = true;
             vst3Check.AutoSize = true;
             vst3Check.Location = new Point(32, 100);
@@ -83,7 +83,7 @@ internal static class TrukendoosWindowsInstaller
                 BackColor = BackColor
             };
 
-            standaloneCheck.Text = "Install standalone app";
+            standaloneCheck.Text = ExistingStandaloneInstalled() ? "Update standalone app" : "Install standalone app";
             standaloneCheck.Checked = true;
             standaloneCheck.AutoSize = true;
             standaloneCheck.Location = new Point(32, 154);
@@ -99,7 +99,7 @@ internal static class TrukendoosWindowsInstaller
                 BackColor = BackColor
             };
 
-            installButton.Text = "Install";
+            installButton.Text = ExistingInstallDetected() ? "Update" : "Install";
             installButton.Font = new Font("Segoe UI", 10.0f, FontStyle.Bold);
             installButton.Size = new Size(100, 34);
             installButton.Location = new Point(244, 214);
@@ -148,6 +148,21 @@ internal static class TrukendoosWindowsInstaller
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     @"trukendoos\Presets");
             }
+        }
+
+        private static bool ExistingVst3Installed()
+        {
+            return Directory.Exists(Path.Combine(Vst3Target, "trukendoos.vst3"));
+        }
+
+        private static bool ExistingStandaloneInstalled()
+        {
+            return File.Exists(Path.Combine(AppTarget, "trukendoos.exe"));
+        }
+
+        private static bool ExistingInstallDetected()
+        {
+            return ExistingVst3Installed() || ExistingStandaloneInstalled();
         }
 
         private void InstallButtonClicked(object sender, EventArgs args)
@@ -199,7 +214,7 @@ internal static class TrukendoosWindowsInstaller
                         File.Copy(source, Path.Combine(AppTarget, "trukendoos.exe"), true);
                     }
 
-                    MessageBox.Show("trukendoos installed. Rescan plugins in your DAW if needed.", "trukendoos installer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("trukendoos installed/updated. Rescan plugins in your DAW if needed.", "trukendoos installer", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     Close();
                 }
                 finally

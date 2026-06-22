@@ -31,7 +31,6 @@ public:
         bool applyOutputGain = true;
         bool applyWidth = true;
         bool applyHarmonizer = true;
-        bool freezeEnabled = false;
         bool harmonizerEnabled = false;
         float harmonizerPitchSemitones = 0.0f;
         float harmonizerMix = 0.0f;
@@ -48,7 +47,9 @@ public:
     void setParameters(const Parameters& newParameters);
     int getLatencySamples() const noexcept;
     void process(juce::AudioBuffer<float>& buffer);
+    void processGlobalInput(juce::AudioBuffer<float>& buffer);
     void processGlobalBus(juce::AudioBuffer<float>& buffer);
+    void processGlobalOutput(juce::AudioBuffer<float>& wetBuffer, const juce::AudioBuffer<float>& dryBuffer);
 
 private:
     static constexpr int overlap = 4;

@@ -20,9 +20,11 @@ $sourceStandalone = Join-Path $installRoot "trukendoos.exe"
 $vst3Target = Join-Path $env:LOCALAPPDATA "Programs\Common\VST3"
 $appTarget = Join-Path $env:LOCALAPPDATA "Programs\trukendoos"
 $presetTarget = Join-Path $env:APPDATA "trukendoos\Presets"
+$vst3Installed = Test-Path -LiteralPath (Join-Path $vst3Target "trukendoos.vst3")
+$standaloneInstalled = Test-Path -LiteralPath (Join-Path $appTarget "trukendoos.exe")
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "trukendoos installer"
+$form.Text = "trukendoos installer / updater"
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
@@ -39,7 +41,7 @@ $title.Location = New-Object System.Drawing.Point(24, 20)
 $form.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
-$subtitle.Text = "tijd voor een trucje!"
+$subtitle.Text = if ($vst3Installed -or $standaloneInstalled) { "update found install - tijd voor een trucje!" } else { "tijd voor een trucje!" }
 $subtitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(28, 62)
@@ -47,7 +49,7 @@ $subtitle.ForeColor = [System.Drawing.Color]::FromArgb(98, 244, 200)
 $form.Controls.Add($subtitle)
 
 $vst3Check = New-Object System.Windows.Forms.CheckBox
-$vst3Check.Text = "Install VST3 plugin"
+$vst3Check.Text = if ($vst3Installed) { "Update VST3 plugin" } else { "Install VST3 plugin" }
 $vst3Check.Checked = $true
 $vst3Check.AutoSize = $true
 $vst3Check.Location = New-Object System.Drawing.Point(32, 104)
@@ -63,7 +65,7 @@ $vst3Path.ForeColor = [System.Drawing.Color]::FromArgb(160, 150, 125)
 $form.Controls.Add($vst3Path)
 
 $standaloneCheck = New-Object System.Windows.Forms.CheckBox
-$standaloneCheck.Text = "Install standalone app"
+$standaloneCheck.Text = if ($standaloneInstalled) { "Update standalone app" } else { "Install standalone app" }
 $standaloneCheck.Checked = $true
 $standaloneCheck.AutoSize = $true
 $standaloneCheck.Location = New-Object System.Drawing.Point(32, 156)
@@ -79,7 +81,7 @@ $standalonePath.ForeColor = [System.Drawing.Color]::FromArgb(160, 150, 125)
 $form.Controls.Add($standalonePath)
 
 $installButton = New-Object System.Windows.Forms.Button
-$installButton.Text = "Install"
+$installButton.Text = if ($vst3Installed -or $standaloneInstalled) { "Update" } else { "Install" }
 $installButton.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 $installButton.Size = New-Object System.Drawing.Size(100, 34)
 $installButton.Location = New-Object System.Drawing.Point(216, 214)
@@ -122,7 +124,7 @@ $installButton.Add_Click({
             Copy-Item -LiteralPath $sourceStandalone -Destination (Join-Path $appTarget "trukendoos.exe") -Force
         }
 
-        [System.Windows.Forms.MessageBox]::Show("trukendoos installed. Rescan plugins in your DAW if needed.", "trukendoos installer", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("trukendoos installed/updated. Rescan plugins in your DAW if needed.", "trukendoos installer", "OK", "Information") | Out-Null
         $form.Close()
     } catch {
         [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "trukendoos installer", "OK", "Error") | Out-Null

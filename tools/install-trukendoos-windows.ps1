@@ -22,8 +22,8 @@ if ($InstallStandalone -and (Test-Path $sourceExe)) {
     Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $appTarget "trukendoos.exe") -Force
 }
 
-Write-Host "Installed trukendoos VST3 to: $vst3Target"
+Write-Host "Installed/updated trukendoos VST3 to: $vst3Target"
 if ($InstallStandalone -and (Test-Path $sourceExe)) {
-    Write-Host "Installed trukendoos standalone to: $appTarget"
+    Write-Host "Installed/updated trukendoos standalone to: $appTarget"
 }
 Write-Host "Done. Rescan plugins in your DAW if trukendoos does not show up immediately."

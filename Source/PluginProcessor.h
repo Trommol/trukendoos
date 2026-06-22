@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "dsp/SpectralCompressor.h"
 #include "dsp/SpectralRotEngine.h"
 
 class SpectralRotAudioProcessor final : public juce::AudioProcessor
@@ -12,7 +13,8 @@ public:
     {
         melt = 0,
         rust,
-        glass
+        glass,
+        squash
     };
 
     SpectralRotAudioProcessor();
@@ -43,21 +45,31 @@ public:
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return parameters; }
     void copyOutputWaveform(std::array<float, 256>& destination) const;
+    void copyCompressorWaveform(int slot, std::array<float, 256>& destination) const;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
     void updateEngineParameters();
-    SpectralRotEngine::Parameters makeParametersForSlot(int slot, ChainMode mode, bool firstActive, bool lastActive);
+    void updateCompressorParameters();
+    SpectralCompressor::Parameters makeCompressorParametersForSlot(int slot);
+    SpectralRotEngine::Parameters makeParametersForSlot(int slot, ChainMode mode, bool firstActive, bool lastActive, bool chainHasActiveSlot);
     int getFftOrder() const;
     int calculateReportedLatencySamples();
     void applyInputMode(juce::AudioBuffer<float>& buffer);
+    void delayDryBuffer(juce::AudioBuffer<float>& buffer, int delaySamples);
     void pushOutputWaveform(const juce::AudioBuffer<float>& buffer);
+    void pushCompressorActivity(int slot, float activity);
 
     juce::AudioProcessorValueTreeState parameters;
-    std::array<SpectralRotEngine, 3> engines;
+    std::array<SpectralRotEngine, 4> engines;
+    std::array<SpectralCompressor, 4> compressors;
+    std::vector<std::vector<float>> dryDelayLines;
+    std::vector<int> dryDelayPositions;
     std::array<std::atomic<float>, 1024> outputWaveform {};
     std::atomic<int> outputWaveformWritePosition { 0 };
+    std::array<std::array<std::atomic<float>, 1024>, 4> compressorWaveforms {};
+    std::array<std::atomic<int>, 4> compressorWaveformWritePositions {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralRotAudioProcessor)
 };

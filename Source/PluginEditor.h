@@ -43,6 +43,8 @@ private:
     void configureSlotSliderRanges();
     void updateModeLabels();
     void updateModeAttachments();
+    void refreshSelectedSlotControlsFromParameters();
+    bool isEditingSlotControl() const;
     void saveSelectedSlotControls();
     void connectSlotControlWriters();
     juce::String selectedSlotPrefix() const;
@@ -51,7 +53,7 @@ private:
     void swapSlots(int first, int second);
     int slotAt(juce::Point<int> position) const;
     void drawScrew(juce::Graphics& g, juce::Point<float> centre, float radius, float angle) const;
-    void drawScreen(juce::Graphics& g, juce::Rectangle<float> bounds) const;
+    void drawScreen(juce::Graphics& g, juce::Rectangle<float> bounds, bool compressorView) const;
     juce::File getPresetDirectory() const;
     void refreshPresetMenu();
     void showPresetMenu();
@@ -66,6 +68,7 @@ private:
     juce::ComboBox slot1Box;
     juce::ComboBox slot2Box;
     juce::ComboBox slot3Box;
+    juce::ComboBox slot4Box;
     juce::ComboBox qualityBox;
     juce::ComboBox inputModeBox;
     juce::ComboBox presetBox;
@@ -74,6 +77,7 @@ private:
     juce::ToggleButton slot1Button;
     juce::ToggleButton slot2Button;
     juce::ToggleButton slot3Button;
+    juce::ToggleButton slot4Button;
     juce::Label modeLabel;
     juce::Label qualityLabel;
     juce::Label inputModeLabel;
@@ -82,11 +86,13 @@ private:
     std::unique_ptr<ComboBoxAttachment> slot1Attachment;
     std::unique_ptr<ComboBoxAttachment> slot2Attachment;
     std::unique_ptr<ComboBoxAttachment> slot3Attachment;
+    std::unique_ptr<ComboBoxAttachment> slot4Attachment;
     std::unique_ptr<ComboBoxAttachment> qualityAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ButtonAttachment> slot1OnAttachment;
     std::unique_ptr<ButtonAttachment> slot2OnAttachment;
     std::unique_ptr<ButtonAttachment> slot3OnAttachment;
+    std::unique_ptr<ButtonAttachment> slot4OnAttachment;
 
     juce::Slider driveSlider;
     juce::Slider rotSlider;
@@ -104,11 +110,15 @@ private:
     juce::ToggleButton edgePreButton;
     juce::ToggleButton harmonizerButton;
     juce::ToggleButton harmonizer2Button;
-    juce::ToggleButton freezeButton;
     juce::Slider harmonizerPitchSlider;
     juce::Slider harmonizerMixSlider;
     juce::Slider harmonizer2PitchSlider;
     juce::Slider harmonizer2MixSlider;
+    juce::ToggleButton compressorButton;
+    juce::Slider compressorTameSlider;
+    juce::Slider compressorThresholdSlider;
+    juce::Slider compressorFocusSlider;
+    juce::Slider compressorSpeedSlider;
 
     juce::Label driveLabel;
     juce::Label rotLabel;
@@ -127,6 +137,10 @@ private:
     juce::Label harmonizerMixLabel;
     juce::Label harmonizer2PitchLabel;
     juce::Label harmonizer2MixLabel;
+    juce::Label compressorTameLabel;
+    juce::Label compressorThresholdLabel;
+    juce::Label compressorFocusLabel;
+    juce::Label compressorSpeedLabel;
 
     std::unique_ptr<SliderAttachment> driveAttachment;
     std::unique_ptr<SliderAttachment> rotAttachment;
@@ -142,12 +156,16 @@ private:
     std::unique_ptr<SliderAttachment> reverseAttachment;
     std::unique_ptr<ButtonAttachment> harmonizerOnAttachment;
     std::unique_ptr<ButtonAttachment> harmonizer2OnAttachment;
-    std::unique_ptr<ButtonAttachment> freezeOnAttachment;
     std::unique_ptr<SliderAttachment> harmonizerPitchAttachment;
     std::unique_ptr<SliderAttachment> harmonizerMixAttachment;
     std::unique_ptr<SliderAttachment> harmonizer2PitchAttachment;
     std::unique_ptr<SliderAttachment> harmonizer2MixAttachment;
-    std::array<juce::Rectangle<int>, 3> slotBounds;
+    std::unique_ptr<ButtonAttachment> compressorOnAttachment;
+    std::unique_ptr<SliderAttachment> compressorTameAttachment;
+    std::unique_ptr<SliderAttachment> compressorThresholdAttachment;
+    std::unique_ptr<SliderAttachment> compressorFocusAttachment;
+    std::unique_ptr<SliderAttachment> compressorSpeedAttachment;
+    std::array<juce::Rectangle<int>, 4> slotBounds;
     int draggedSlot = -1;
     int selectedSlot = 0;
     bool draggingSlot = false;

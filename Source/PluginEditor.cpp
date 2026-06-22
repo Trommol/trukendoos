@@ -25,6 +25,12 @@ namespace
             parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
     }
 
+    void setRealParameterValueSilently(juce::AudioProcessorValueTreeState& state, const juce::String& id, float value)
+    {
+        if (auto* parameter = parameterFor(state, id))
+            parameter->setValue(parameter->convertTo0to1(value));
+    }
+
     float getRealParameterValue(juce::AudioProcessorValueTreeState& state, const juce::String& id, float fallback = 0.0f)
     {
         if (auto* parameter = state.getRawParameterValue(id))
@@ -33,12 +39,46 @@ namespace
         return fallback;
     }
 
+    void removeParameterFromState(juce::ValueTree tree, const juce::String& parameterId)
+    {
+        for (int child = tree.getNumChildren(); --child >= 0;)
+        {
+            auto childTree = tree.getChild(child);
+            removeParameterFromState(childTree, parameterId);
+
+            if (childTree.getProperty("id").toString() == parameterId)
+                tree.removeChild(child, nullptr);
+        }
+
+        tree.removeProperty(parameterId, nullptr);
+    }
+
+    juce::String readPresetCreator(const juce::File& file)
+    {
+        if (auto xml = juce::parseXML(file))
+            return xml->getStringAttribute("creator").trim();
+
+        return {};
+    }
+
+    juce::String presetMenuNameForFile(const juce::File& file)
+    {
+        const auto creator = readPresetCreator(file);
+        auto name = file.getFileNameWithoutExtension();
+
+        if (creator.isNotEmpty())
+            name += "  // " + creator;
+
+        return name;
+    }
+
     juce::Colour modeAccentForIndex(int index)
     {
         switch (index)
         {
             case 1: return juce::Colour(coral);
             case 2: return juce::Colour(hotPink);
+            case 3: return juce::Colour(0xfff1d04b);
             default: return juce::Colour(mint);
         }
     }
@@ -49,6 +89,7 @@ namespace
         {
             case 1: return juce::Colour(0xff311712);
             case 2: return juce::Colour(0xff201526);
+            case 3: return juce::Colour(0xff33270d);
             default: return juce::Colour(0xff122b25);
         }
     }
@@ -77,6 +118,7 @@ namespace
         {
             case 1: return loadAsset(BinaryData::header_rust_png, BinaryData::header_rust_pngSize);
             case 2: return loadAsset(BinaryData::header_glass_png, BinaryData::header_glass_pngSize);
+            case 3: return loadAsset(BinaryData::header_squash_png, BinaryData::header_squash_pngSize);
             default: return loadAsset(BinaryData::header_melt_png, BinaryData::header_melt_pngSize);
         }
     }
@@ -87,6 +129,7 @@ namespace
         {
             case 1: return loadAsset(BinaryData::pedal_rust_png, BinaryData::pedal_rust_pngSize);
             case 2: return loadAsset(BinaryData::pedal_glass_png, BinaryData::pedal_glass_pngSize);
+            case 3: return loadAsset(BinaryData::pedal_squash_png, BinaryData::pedal_squash_pngSize);
             default: return loadAsset(BinaryData::pedal_melt_png, BinaryData::pedal_melt_pngSize);
         }
     }
@@ -103,6 +146,9 @@ namespace
 
         if (id == "knob-glass")
             return loadAsset(BinaryData::knob_glass_png, BinaryData::knob_glass_pngSize);
+
+        if (id == "knob-squash")
+            return loadAsset(BinaryData::knob_squash_png, BinaryData::knob_squash_pngSize);
 
         if (id == "knob-harmonizer")
             return loadAsset(BinaryData::knob_harmonizer_png, BinaryData::knob_harmonizer_pngSize);
@@ -137,6 +183,7 @@ namespace
         {
             case 1: return { 506.0f, 183.0f, 461.0f, 569.0f };
             case 2: return { 506.0f, 183.0f, 460.0f, 573.0f };
+            case 3: return { 506.0f, 183.0f, 461.0f, 569.0f };
             default: return { 506.0f, 183.0f, 460.0f, 577.0f };
         }
     }
@@ -147,6 +194,7 @@ namespace
         {
             case 1: return { 604.0f, 578.0f, 266.0f, 128.0f };
             case 2: return { 593.0f, 586.0f, 286.0f, 123.0f };
+            case 3: return { 604.0f, 578.0f, 266.0f, 128.0f };
             default: return { 594.0f, 578.0f, 281.0f, 125.0f };
         }
     }
@@ -189,6 +237,8 @@ void SpectralRotAudioProcessorEditor::RotLookAndFeel::drawRotarySlider(juce::Gra
             bodyColour = juce::Colour(0xff0d3a34);
         else if (slider.getComponentID() == "knob-glass")
             bodyColour = juce::Colour(0xff20182b);
+        else if (slider.getComponentID() == "knob-squash")
+            bodyColour = juce::Colour(0xff49370d);
         else if (slider.getComponentID() == "knob-global")
             bodyColour = juce::Colour(0xff4f4b43);
         else if (slider.getComponentID() == "knob-harmonizer")
@@ -300,6 +350,7 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
         box.addItem("Melt", 1);
         box.addItem("Rust", 2);
         box.addItem("Glass", 3);
+        box.addItem("Squash", 4);
     };
 
     addAndMakeVisible(modeBox);
@@ -309,25 +360,32 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     addAndMakeVisible(slot1Box);
     addAndMakeVisible(slot2Box);
     addAndMakeVisible(slot3Box);
+    addAndMakeVisible(slot4Box);
     configureModeBox(slot1Box);
     configureModeBox(slot2Box);
     configureModeBox(slot3Box);
+    configureModeBox(slot4Box);
     slot1Attachment = std::make_unique<ComboBoxAttachment>(state, "slot1Mode", slot1Box);
     slot2Attachment = std::make_unique<ComboBoxAttachment>(state, "slot2Mode", slot2Box);
     slot3Attachment = std::make_unique<ComboBoxAttachment>(state, "slot3Mode", slot3Box);
+    slot4Attachment = std::make_unique<ComboBoxAttachment>(state, "slot4Mode", slot4Box);
     slot1Box.setVisible(false);
     slot2Box.setVisible(false);
     slot3Box.setVisible(false);
+    slot4Box.setVisible(false);
 
     addAndMakeVisible(slot1Button);
     addAndMakeVisible(slot2Button);
     addAndMakeVisible(slot3Button);
+    addAndMakeVisible(slot4Button);
     slot1Button.setButtonText("1");
     slot2Button.setButtonText("2");
     slot3Button.setButtonText("3");
+    slot4Button.setButtonText("4");
     slot1OnAttachment = std::make_unique<ButtonAttachment>(state, "slot1On", slot1Button);
     slot2OnAttachment = std::make_unique<ButtonAttachment>(state, "slot2On", slot2Button);
     slot3OnAttachment = std::make_unique<ButtonAttachment>(state, "slot3On", slot3Button);
+    slot4OnAttachment = std::make_unique<ButtonAttachment>(state, "slot4On", slot4Button);
 
     addAndMakeVisible(modeLabel);
     modeLabel.setText("Mode", juce::dontSendNotification);
@@ -401,6 +459,12 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     configureSlider(harmonizerMixSlider, harmonizerMixLabel, "");
     configureSlider(harmonizer2PitchSlider, harmonizer2PitchLabel, "Pitch");
     configureSlider(harmonizer2MixSlider, harmonizer2MixLabel, "");
+    configureSlider(compressorTameSlider, compressorTameLabel, "Tame");
+    configureSlider(compressorThresholdSlider, compressorThresholdLabel, "Threshold");
+    configureSlider(compressorFocusSlider, compressorFocusLabel, "Focus");
+    configureSlider(compressorSpeedSlider, compressorSpeedLabel, "Speed");
+    inputGainLabel.setText({}, juce::dontSendNotification);
+    outputLabel.setText({}, juce::dontSendNotification);
     inputGainSlider.setComponentID("knob-global");
     outputSlider.setComponentID("knob-global");
     lowHoldSlider.setComponentID("knob-global");
@@ -411,6 +475,10 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     harmonizerMixSlider.setComponentID("knob-harmonizer");
     harmonizer2PitchSlider.setComponentID("knob-harmonizer");
     harmonizer2MixSlider.setComponentID("knob-harmonizer");
+    compressorTameSlider.setComponentID("knob-global");
+    compressorThresholdSlider.setComponentID("knob-global");
+    compressorFocusSlider.setComponentID("knob-global");
+    compressorSpeedSlider.setComponentID("knob-global");
     configureSlotSliderRanges();
     inputGainSlider.setNumDecimalPlacesToDisplay(1);
     outputSlider.setNumDecimalPlacesToDisplay(1);
@@ -422,6 +490,10 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     harmonizerMixSlider.setNumDecimalPlacesToDisplay(1);
     harmonizer2PitchSlider.setNumDecimalPlacesToDisplay(1);
     harmonizer2MixSlider.setNumDecimalPlacesToDisplay(1);
+    compressorTameSlider.setNumDecimalPlacesToDisplay(1);
+    compressorThresholdSlider.setNumDecimalPlacesToDisplay(1);
+    compressorFocusSlider.setNumDecimalPlacesToDisplay(1);
+    compressorSpeedSlider.setNumDecimalPlacesToDisplay(1);
     mixSlider.textFromValueFunction = [] (double value) { return juce::String(value * 100.0, 1) + "%"; };
     mixSlider.valueFromTextFunction = [] (const juce::String& text) { return text.retainCharacters("0123456789.").getDoubleValue() / 100.0; };
     harmonizerMixSlider.textFromValueFunction = [] (double value) { return juce::String(value * 100.0, 1) + "%"; };
@@ -430,6 +502,12 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     harmonizer2MixSlider.valueFromTextFunction = [] (const juce::String& text) { return text.retainCharacters("0123456789.").getDoubleValue() / 100.0; };
     glassMixSlider.textFromValueFunction = [] (double value) { return juce::String(value * 100.0, 1) + "%"; };
     glassMixSlider.valueFromTextFunction = [] (const juce::String& text) { return text.retainCharacters("0123456789.").getDoubleValue() / 100.0; };
+    compressorTameSlider.textFromValueFunction = [] (double value) { return juce::String(value * 100.0, 1) + "%"; };
+    compressorTameSlider.valueFromTextFunction = [] (const juce::String& text) { return text.retainCharacters("0123456789.").getDoubleValue() / 100.0; };
+    compressorFocusSlider.textFromValueFunction = [] (double value) { return juce::String(value * 100.0, 1) + "%"; };
+    compressorFocusSlider.valueFromTextFunction = [] (const juce::String& text) { return text.retainCharacters("0123456789.").getDoubleValue() / 100.0; };
+    compressorSpeedSlider.textFromValueFunction = [] (double value) { return juce::String(value * 100.0, 1) + "%"; };
+    compressorSpeedSlider.valueFromTextFunction = [] (const juce::String& text) { return text.retainCharacters("0123456789.").getDoubleValue() / 100.0; };
     mixSlider.setDoubleClickReturnValue(true, 1.0);
     outputSlider.setDoubleClickReturnValue(true, 0.0);
     widthSlider.setDoubleClickReturnValue(true, 0.0);
@@ -440,6 +518,10 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     harmonizerMixSlider.setDoubleClickReturnValue(true, 0.0);
     harmonizer2PitchSlider.setDoubleClickReturnValue(true, 0.0);
     harmonizer2MixSlider.setDoubleClickReturnValue(true, 0.0);
+    compressorTameSlider.setDoubleClickReturnValue(true, 0.0);
+    compressorThresholdSlider.setDoubleClickReturnValue(true, -18.0);
+    compressorFocusSlider.setDoubleClickReturnValue(true, 0.5);
+    compressorSpeedSlider.setDoubleClickReturnValue(true, 0.45);
 
     addAndMakeVisible(edgePreButton);
     edgePreButton.setButtonText("Edge Pre");
@@ -456,10 +538,10 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     harmonizer2Button.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff7e8c8));
     harmonizer2Button.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffff5a36));
 
-    addAndMakeVisible(freezeButton);
-    freezeButton.setButtonText("Freeze");
-    freezeButton.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff7e8c8));
-    freezeButton.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffff5a36));
+    addAndMakeVisible(compressorButton);
+    compressorButton.setButtonText("Tamer");
+    compressorButton.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff7e8c8));
+    compressorButton.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffff5a36));
 
     mixAttachment = std::make_unique<SliderAttachment>(state, "mix", mixSlider);
     outputAttachment = std::make_unique<SliderAttachment>(state, "output", outputSlider);
@@ -469,11 +551,15 @@ SpectralRotAudioProcessorEditor::SpectralRotAudioProcessorEditor(SpectralRotAudi
     lowPassAttachment = std::make_unique<SliderAttachment>(state, "lowPass", lowPassSlider);
     harmonizerOnAttachment = std::make_unique<ButtonAttachment>(state, "harmonizerOn", harmonizerButton);
     harmonizer2OnAttachment = std::make_unique<ButtonAttachment>(state, "harmonizer2On", harmonizer2Button);
-    freezeOnAttachment = std::make_unique<ButtonAttachment>(state, "freezeOn", freezeButton);
     harmonizerPitchAttachment = std::make_unique<SliderAttachment>(state, "harmonizerPitch", harmonizerPitchSlider);
     harmonizerMixAttachment = std::make_unique<SliderAttachment>(state, "harmonizerMix", harmonizerMixSlider);
     harmonizer2PitchAttachment = std::make_unique<SliderAttachment>(state, "harmonizer2Pitch", harmonizer2PitchSlider);
     harmonizer2MixAttachment = std::make_unique<SliderAttachment>(state, "harmonizer2Mix", harmonizer2MixSlider);
+    compressorOnAttachment = std::make_unique<ButtonAttachment>(state, "compressorOn", compressorButton);
+    compressorTameAttachment = std::make_unique<SliderAttachment>(state, "compressorTame", compressorTameSlider);
+    compressorThresholdAttachment = std::make_unique<SliderAttachment>(state, "compressorThreshold", compressorThresholdSlider);
+    compressorFocusAttachment = std::make_unique<SliderAttachment>(state, "compressorFocus", compressorFocusSlider);
+    compressorSpeedAttachment = std::make_unique<SliderAttachment>(state, "compressorSpeed", compressorSpeedSlider);
 
     connectSlotControlWriters();
     updateModeLabels();
@@ -491,7 +577,12 @@ SpectralRotAudioProcessorEditor::~SpectralRotAudioProcessorEditor()
 
 void SpectralRotAudioProcessorEditor::timerCallback()
 {
-    processor.copyOutputWaveform(screenWaveform);
+    if (selectedSlotModeIndex() == 3)
+        processor.copyCompressorWaveform(selectedSlot, screenWaveform);
+    else
+        processor.copyOutputWaveform(screenWaveform);
+
+    refreshSelectedSlotControlsFromParameters();
     repaint(scopeBoundsForModeIndex(selectedSlotModeIndex()).expanded(14.0f).toNearestInt());
 }
 
@@ -518,7 +609,7 @@ void SpectralRotAudioProcessorEditor::refreshPresetMenu()
     auto itemId = 1;
     for (const auto& file : files)
     {
-        presetBox.addItem(file.getFileNameWithoutExtension(), itemId++);
+        presetBox.addItem(presetMenuNameForFile(file), itemId++);
         presetMenuFiles.add(file);
     }
 
@@ -527,7 +618,7 @@ void SpectralRotAudioProcessorEditor::refreshPresetMenu()
 
 void SpectralRotAudioProcessorEditor::showPresetMenu()
 {
-    saveSelectedSlotControls();
+    refreshSelectedSlotControlsFromParameters();
     refreshPresetMenu();
 
     auto directory = getPresetDirectory();
@@ -539,7 +630,7 @@ void SpectralRotAudioProcessorEditor::showPresetMenu()
     auto addPresetFile = [this, &menu] (const juce::File& file)
     {
         presetMenuFiles.add(file);
-        menu.addItem(presetMenuFiles.size(), file.getFileNameWithoutExtension());
+        menu.addItem(presetMenuFiles.size(), presetMenuNameForFile(file));
     };
 
     juce::Array<juce::File> rootFiles;
@@ -567,7 +658,13 @@ void SpectralRotAudioProcessorEditor::showPresetMenu()
         {
             presetMenuFiles.add(file);
             const auto relativePath = file.getRelativePathFrom(folder).replace("\\", " / ");
-            submenu.addItem(presetMenuFiles.size(), relativePath.upToLastOccurrenceOf(".trucje", false, true));
+            auto label = relativePath.upToLastOccurrenceOf(".trucje", false, true);
+            const auto creator = readPresetCreator(file);
+
+            if (creator.isNotEmpty())
+                label += "  // " + creator;
+
+            submenu.addItem(presetMenuFiles.size(), label);
         }
 
         menu.addSubMenu(folder.getFileName(), submenu);
@@ -588,7 +685,7 @@ void SpectralRotAudioProcessorEditor::showPresetMenu()
 
 void SpectralRotAudioProcessorEditor::savePreset()
 {
-    saveSelectedSlotControls();
+    refreshSelectedSlotControlsFromParameters();
 
     const auto directory = getPresetDirectory();
     directory.createDirectory();
@@ -609,14 +706,32 @@ void SpectralRotAudioProcessorEditor::savePreset()
             if (file.getFileExtension().isEmpty())
                 file = file.withFileExtension(".trucje");
 
-            if (auto xml = processor.getValueTreeState().copyState().createXml())
-            {
-                xml->setAttribute("presetFormat", "trukendoosState");
-                xml->writeTo(file);
-            }
+            auto* creatorWindow = new juce::AlertWindow("Preset creator", "Add a creator name for this preset.", juce::MessageBoxIconType::NoIcon);
+            creatorWindow->addTextEditor("creator", {}, "Creator");
+            creatorWindow->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            creatorWindow->addButton("Skip", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-            refreshPresetMenu();
-            presetMenuButton.setButtonText(file.getFileNameWithoutExtension());
+            creatorWindow->enterModalState(true, juce::ModalCallbackFunction::create(
+                [this, creatorWindow, file] (int result)
+                {
+                    const auto creator = result == 1 && creatorWindow->getTextEditor("creator") != nullptr
+                        ? creatorWindow->getTextEditor("creator")->getText().trim()
+                        : juce::String();
+
+                    auto state = processor.getValueTreeState().copyState();
+                    removeParameterFromState(state, "inputMode");
+
+                    if (auto xml = state.createXml())
+                    {
+                        xml->setAttribute("presetFormat", "trukendoosState");
+                        xml->setAttribute("creator", creator);
+                        xml->writeTo(file);
+                    }
+
+                    refreshPresetMenu();
+                    presetMenuButton.setButtonText(file.getFileNameWithoutExtension());
+                    presetMenuButton.setTooltip(creator.isNotEmpty() ? "Creator: " + creator : juce::String());
+                }), true);
         });
 }
 
@@ -635,8 +750,16 @@ void SpectralRotAudioProcessorEditor::loadPresetFile(const juce::File& file)
     if (! tree.isValid())
         return;
 
-    processor.getValueTreeState().replaceState(tree);
+    auto& state = processor.getValueTreeState();
+    const auto currentInputMode = getRealParameterValue(state, "inputMode");
+    state.replaceState(tree);
+    setRealParameterValue(state, "inputMode", currentInputMode);
+   #if JucePlugin_Build_Standalone
+    inputModeBox.setSelectedItemIndex(static_cast<int>(currentInputMode), juce::dontSendNotification);
+   #endif
     presetMenuButton.setButtonText(file.getFileNameWithoutExtension());
+    const auto creator = xml->getStringAttribute("creator").trim();
+    presetMenuButton.setTooltip(creator.isNotEmpty() ? "Creator: " + creator : juce::String());
     updateModeLabels();
     updateModeAttachments();
     resized();
@@ -648,14 +771,15 @@ void SpectralRotAudioProcessorEditor::loadSelectedPreset()
     if (loadingPresetMenu || presetBox.getSelectedId() <= 0)
         return;
 
-    const auto file = getPresetDirectory().getChildFile(presetBox.getText()).withFileExtension(".trucje");
-    loadPresetFile(file);
+    const auto index = presetBox.getSelectedId() - 1;
+
+    if (juce::isPositiveAndBelow(index, presetMenuFiles.size()))
+        loadPresetFile(presetMenuFiles.getReference(index));
 }
 
 void SpectralRotAudioProcessorEditor::selectSlot(int slotIndex)
 {
-    saveSelectedSlotControls();
-    selectedSlot = juce::jlimit(0, 2, slotIndex);
+    selectedSlot = juce::jlimit(0, static_cast<int>(slotBounds.size()) - 1, slotIndex);
     updateModeLabels();
     updateModeAttachments();
     resized();
@@ -689,11 +813,14 @@ void SpectralRotAudioProcessorEditor::swapSlots(int first, int second)
 
     const auto firstModeValue = firstMode->getValue();
     const auto firstOnValue = firstOn->getValue();
-    float firstControls[8] {};
-    float secondControls[8] {};
-    const juce::String suffixes[] = { "Drive", "Rot", "Lock", "Tilt", "Shape", "Reverse", "GlassMix", "EdgePre" };
+    float firstControls[12] {};
+    float secondControls[12] {};
+    const juce::String suffixes[] = {
+        "Drive", "Rot", "Lock", "Tilt", "Shape", "Reverse", "GlassMix", "EdgePre",
+        "SquashTame", "SquashThreshold", "SquashFocus", "SquashSpeed"
+    };
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 12; ++i)
     {
         firstControls[i] = parameterFor(state, "slot" + juce::String(first + 1) + suffixes[i])->getValue();
         secondControls[i] = parameterFor(state, "slot" + juce::String(second + 1) + suffixes[i])->getValue();
@@ -704,13 +831,13 @@ void SpectralRotAudioProcessorEditor::swapSlots(int first, int second)
     secondMode->setValueNotifyingHost(firstModeValue);
     secondOn->setValueNotifyingHost(firstOnValue);
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 12; ++i)
     {
         parameterFor(state, "slot" + juce::String(first + 1) + suffixes[i])->setValueNotifyingHost(secondControls[i]);
         parameterFor(state, "slot" + juce::String(second + 1) + suffixes[i])->setValueNotifyingHost(firstControls[i]);
     }
 
-    selectedSlot = juce::jlimit(0, 2, second);
+    selectedSlot = juce::jlimit(0, static_cast<int>(slotBounds.size()) - 1, second);
     updateModeLabels();
     updateModeAttachments();
     resized();
@@ -753,8 +880,8 @@ void SpectralRotAudioProcessorEditor::mouseUp(const juce::MouseEvent& event)
 
 int SpectralRotAudioProcessorEditor::selectedSlotModeIndex() const
 {
-    const juce::ComboBox* boxes[] = { &slot1Box, &slot2Box, &slot3Box };
-    return boxes[static_cast<size_t>(juce::jlimit(0, 2, selectedSlot))]->getSelectedItemIndex();
+    const juce::ComboBox* boxes[] = { &slot1Box, &slot2Box, &slot3Box, &slot4Box };
+    return boxes[static_cast<size_t>(juce::jlimit(0, static_cast<int>(slotBounds.size()) - 1, selectedSlot))]->getSelectedItemIndex();
 }
 
 juce::String SpectralRotAudioProcessorEditor::selectedSlotPrefix() const
@@ -766,12 +893,13 @@ void SpectralRotAudioProcessorEditor::updateModeAttachments()
 {
     auto& state = processor.getValueTreeState();
     const auto prefix = selectedSlotPrefix();
+    const auto isSquash = selectedSlotModeIndex() == 3;
 
     loadingSlotControls = true;
-    driveSlider.setValue(getRealParameterValue(state, prefix + "Drive"), juce::dontSendNotification);
-    rotSlider.setValue(getRealParameterValue(state, prefix + "Rot"), juce::dontSendNotification);
-    lockSlider.setValue(getRealParameterValue(state, prefix + "Lock"), juce::dontSendNotification);
-    tiltSlider.setValue(getRealParameterValue(state, prefix + "Tilt"), juce::dontSendNotification);
+    driveSlider.setValue(getRealParameterValue(state, prefix + (isSquash ? "SquashTame" : "Drive")), juce::dontSendNotification);
+    rotSlider.setValue(getRealParameterValue(state, prefix + (isSquash ? "SquashThreshold" : "Rot"), isSquash ? -18.0f : 0.0f), juce::dontSendNotification);
+    lockSlider.setValue(getRealParameterValue(state, prefix + (isSquash ? "SquashFocus" : "Lock"), isSquash ? 0.5f : 0.0f), juce::dontSendNotification);
+    tiltSlider.setValue(getRealParameterValue(state, prefix + (isSquash ? "SquashSpeed" : "Tilt"), isSquash ? 0.45f : 0.0f), juce::dontSendNotification);
     subGuardSlider.setValue(getRealParameterValue(state, prefix + "Shape", 90.0f), juce::dontSendNotification);
     reverseSlider.setValue(getRealParameterValue(state, prefix + "Reverse"), juce::dontSendNotification);
     glassMixSlider.setValue(getRealParameterValue(state, prefix + "GlassMix", 1.0f), juce::dontSendNotification);
@@ -779,15 +907,35 @@ void SpectralRotAudioProcessorEditor::updateModeAttachments()
     loadingSlotControls = false;
 }
 
+bool SpectralRotAudioProcessorEditor::isEditingSlotControl() const
+{
+    return driveSlider.isMouseButtonDown()
+        || rotSlider.isMouseButtonDown()
+        || lockSlider.isMouseButtonDown()
+        || tiltSlider.isMouseButtonDown()
+        || subGuardSlider.isMouseButtonDown()
+        || reverseSlider.isMouseButtonDown()
+        || glassMixSlider.isMouseButtonDown();
+}
+
+void SpectralRotAudioProcessorEditor::refreshSelectedSlotControlsFromParameters()
+{
+    if (loadingSlotControls || isEditingSlotControl())
+        return;
+
+    updateModeAttachments();
+}
+
 void SpectralRotAudioProcessorEditor::saveSelectedSlotControls()
 {
     auto& state = processor.getValueTreeState();
     const auto prefix = selectedSlotPrefix();
+    const auto isSquash = selectedSlotModeIndex() == 3;
 
-    setRealParameterValue(state, prefix + "Drive", static_cast<float>(driveSlider.getValue()));
-    setRealParameterValue(state, prefix + "Rot", static_cast<float>(rotSlider.getValue()));
-    setRealParameterValue(state, prefix + "Lock", static_cast<float>(lockSlider.getValue()));
-    setRealParameterValue(state, prefix + "Tilt", static_cast<float>(tiltSlider.getValue()));
+    setRealParameterValue(state, prefix + (isSquash ? "SquashTame" : "Drive"), static_cast<float>(driveSlider.getValue()));
+    setRealParameterValue(state, prefix + (isSquash ? "SquashThreshold" : "Rot"), static_cast<float>(rotSlider.getValue()));
+    setRealParameterValue(state, prefix + (isSquash ? "SquashFocus" : "Lock"), static_cast<float>(lockSlider.getValue()));
+    setRealParameterValue(state, prefix + (isSquash ? "SquashSpeed" : "Tilt"), static_cast<float>(tiltSlider.getValue()));
     setRealParameterValue(state, prefix + "Shape", static_cast<float>(subGuardSlider.getValue()));
     setRealParameterValue(state, prefix + "Reverse", static_cast<float>(reverseSlider.getValue()));
     setRealParameterValue(state, prefix + "GlassMix", static_cast<float>(glassMixSlider.getValue()));
@@ -796,35 +944,87 @@ void SpectralRotAudioProcessorEditor::saveSelectedSlotControls()
 
 void SpectralRotAudioProcessorEditor::connectSlotControlWriters()
 {
-    auto writeSelectedSlot = [this]
+    auto& state = processor.getValueTreeState();
+
+    auto parameterSuffixForSelectedMode = [this] (const juce::String& suffix)
     {
-        if (! loadingSlotControls)
-            saveSelectedSlotControls();
+        if (selectedSlotModeIndex() != 3)
+            return suffix;
+
+        if (suffix == "Drive") return juce::String("SquashTame");
+        if (suffix == "Rot") return juce::String("SquashThreshold");
+        if (suffix == "Lock") return juce::String("SquashFocus");
+        if (suffix == "Tilt") return juce::String("SquashSpeed");
+        return suffix;
     };
 
-    driveSlider.onValueChange = writeSelectedSlot;
-    rotSlider.onValueChange = writeSelectedSlot;
-    lockSlider.onValueChange = writeSelectedSlot;
-    tiltSlider.onValueChange = writeSelectedSlot;
-    subGuardSlider.onValueChange = writeSelectedSlot;
-    reverseSlider.onValueChange = writeSelectedSlot;
-    glassMixSlider.onValueChange = writeSelectedSlot;
-    edgePreButton.onClick = writeSelectedSlot;
+    auto beginGesture = [this, &state, parameterSuffixForSelectedMode] (const juce::String& suffix)
+    {
+        if (auto* parameter = parameterFor(state, selectedSlotPrefix() + parameterSuffixForSelectedMode(suffix)))
+            parameter->beginChangeGesture();
+    };
+
+    auto endGesture = [this, &state, parameterSuffixForSelectedMode] (const juce::String& suffix)
+    {
+        if (auto* parameter = parameterFor(state, selectedSlotPrefix() + parameterSuffixForSelectedMode(suffix)))
+            parameter->endChangeGesture();
+    };
+
+    auto writeSlotValue = [this, &state, parameterSuffixForSelectedMode] (const juce::String& suffix, float value)
+    {
+        if (! loadingSlotControls)
+            setRealParameterValue(state, selectedSlotPrefix() + parameterSuffixForSelectedMode(suffix), value);
+    };
+
+    auto wireSlider = [this, beginGesture, endGesture, writeSlotValue] (juce::Slider& slider, const juce::String& suffix)
+    {
+        slider.onDragStart = [beginGesture, suffix] { beginGesture(suffix); };
+        slider.onDragEnd = [endGesture, suffix] { endGesture(suffix); };
+        slider.onValueChange = [this, &slider, writeSlotValue, suffix]
+        {
+            writeSlotValue(suffix, static_cast<float>(slider.getValue()));
+        };
+    };
+
+    wireSlider(driveSlider, "Drive");
+    wireSlider(rotSlider, "Rot");
+    wireSlider(lockSlider, "Lock");
+    wireSlider(tiltSlider, "Tilt");
+    wireSlider(subGuardSlider, "Shape");
+    wireSlider(reverseSlider, "Reverse");
+    wireSlider(glassMixSlider, "GlassMix");
+
+    edgePreButton.onClick = [this, &state]
+    {
+        if (loadingSlotControls)
+            return;
+
+        const auto id = selectedSlotPrefix() + "EdgePre";
+
+        if (auto* parameter = parameterFor(state, id))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(edgePreButton.getToggleState() ? 1.0f : 0.0f);
+            parameter->endChangeGesture();
+        }
+    };
 }
 
 void SpectralRotAudioProcessorEditor::updateModeLabels()
 {
     const auto modeIndex = selectedSlotModeIndex();
     const auto isGlass = modeIndex == 2;
+    const auto isSquash = modeIndex == 3;
     const auto accent = modeAccentForIndex(modeIndex);
     reverseSlider.setVisible(isGlass);
     reverseLabel.setVisible(isGlass);
     glassMixSlider.setVisible(isGlass);
     glassMixLabel.setVisible(isGlass);
-    subGuardSlider.setVisible(modeIndex != 0);
-    subGuardLabel.setVisible(modeIndex != 0);
+    subGuardSlider.setVisible(modeIndex != 0 && ! isSquash);
+    subGuardLabel.setVisible(modeIndex != 0 && ! isSquash);
     edgePreButton.setVisible(modeIndex == 1);
     driveSlider.setRange(modeIndex == 0 ? -1.0 : 0.0, 1.0, 0.001);
+    rotSlider.setRange(isSquash ? -48.0 : 0.0, isSquash ? 0.0 : 1.0, isSquash ? 0.01 : 0.001);
     lockSlider.setRange(modeIndex == 2 ? -1.0 : 0.0, 1.0, 0.001);
     tiltSlider.setRange(0.0, 1.0, 0.001);
 
@@ -833,7 +1033,7 @@ void SpectralRotAudioProcessorEditor::updateModeLabels()
 
     for (auto* slider : modeSliders)
     {
-        slider->setComponentID(modeIndex == 1 ? "knob-rust" : (modeIndex == 2 ? "knob-glass" : "knob-melt"));
+        slider->setComponentID(modeIndex == 1 ? "knob-rust" : (modeIndex == 2 ? "knob-glass" : (modeIndex == 3 ? "knob-squash" : "knob-melt")));
         slider->setColour(juce::Slider::rotarySliderFillColourId, accent);
         slider->setColour(juce::Slider::thumbColourId, accent.brighter(0.7f));
     }
@@ -842,10 +1042,27 @@ void SpectralRotAudioProcessorEditor::updateModeLabels()
     {
         label->setColour(juce::Label::textColourId, juce::Colours::white);
         label->setFont(juce::FontOptions(13.5f, juce::Font::bold));
+        label->setAlpha(isSquash ? 0.0f : 1.0f);
     }
 
     switch (modeIndex)
     {
+        case 3:
+            driveSlider.setDoubleClickReturnValue(true, 0.0);
+            rotSlider.setDoubleClickReturnValue(true, -18.0);
+            lockSlider.setDoubleClickReturnValue(true, 0.5);
+            tiltSlider.setDoubleClickReturnValue(true, 0.45);
+            subGuardSlider.setDoubleClickReturnValue(true, 90.0);
+            reverseSlider.setDoubleClickReturnValue(true, 0.0);
+            glassMixSlider.setDoubleClickReturnValue(true, 1.0);
+            driveLabel.setText("Tame", juce::dontSendNotification);
+            rotLabel.setText("Threshold", juce::dontSendNotification);
+            lockLabel.setText("Focus", juce::dontSendNotification);
+            tiltLabel.setText("Speed", juce::dontSendNotification);
+            subGuardLabel.setText("", juce::dontSendNotification);
+            reverseLabel.setText("Sway", juce::dontSendNotification);
+            break;
+
         case 1:
             driveSlider.setDoubleClickReturnValue(true, 0.55);
             rotSlider.setDoubleClickReturnValue(true, 0.58);
@@ -949,7 +1166,7 @@ void SpectralRotAudioProcessorEditor::drawScrew(juce::Graphics& g, juce::Point<f
     g.fillPath(slot);
 }
 
-void SpectralRotAudioProcessorEditor::drawScreen(juce::Graphics& g, juce::Rectangle<float> bounds) const
+void SpectralRotAudioProcessorEditor::drawScreen(juce::Graphics& g, juce::Rectangle<float> bounds, bool compressorView) const
 {
     g.setColour(juce::Colour(0xff080706));
     g.fillRoundedRectangle(bounds.expanded(8.0f), 8.0f);
@@ -965,25 +1182,51 @@ void SpectralRotAudioProcessorEditor::drawScreen(juce::Graphics& g, juce::Rectan
     for (int y = 0; y < bounds.getHeight(); y += 5)
         g.drawHorizontalLine(static_cast<int>(bounds.getY()) + y, bounds.getX(), bounds.getRight());
 
-    const auto centreY = bounds.getCentreY();
     juce::Path spectrum;
-    spectrum.startNewSubPath(bounds.getX() + 10.0f, centreY);
     const auto displayWidth = bounds.getWidth() - 20.0f;
-    for (int i = 0; i < static_cast<int>(screenWaveform.size()); ++i)
-    {
-        const auto x = bounds.getX() + 10.0f + displayWidth * static_cast<float>(i) / static_cast<float>(screenWaveform.size() - 1);
-        const auto y = centreY - juce::jlimit(-1.0f, 1.0f, screenWaveform[static_cast<size_t>(i)]) * (bounds.getHeight() * 0.38f);
-        spectrum.lineTo(x, y);
-    }
 
-    g.setColour(juce::Colour(mint).withAlpha(0.22f));
-    g.strokePath(spectrum, juce::PathStrokeType(10.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour(juce::Colour(mint));
-    g.strokePath(spectrum, juce::PathStrokeType(2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    if (compressorView)
+    {
+        const auto bottom = bounds.getBottom() - 16.0f;
+        spectrum.startNewSubPath(bounds.getX() + 10.0f, bottom);
+
+        for (int i = 0; i < static_cast<int>(screenWaveform.size()); ++i)
+        {
+            const auto x = bounds.getX() + 10.0f + displayWidth * static_cast<float>(i) / static_cast<float>(screenWaveform.size() - 1);
+            const auto amount = juce::jlimit(0.0f, 1.0f, screenWaveform[static_cast<size_t>(i)] * 2.4f);
+            const auto y = bottom - amount * (bounds.getHeight() - 34.0f);
+
+            g.setColour(juce::Colour(0x66f1d04b));
+            g.drawVerticalLine(static_cast<int>(x), y, bottom);
+            spectrum.lineTo(x, y);
+        }
+
+        g.setColour(juce::Colour(0x66a44bd4));
+        g.strokePath(spectrum, juce::PathStrokeType(8.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(0xfff1d04b));
+        g.strokePath(spectrum, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    else
+    {
+        const auto centreY = bounds.getCentreY();
+        spectrum.startNewSubPath(bounds.getX() + 10.0f, centreY);
+
+        for (int i = 0; i < static_cast<int>(screenWaveform.size()); ++i)
+        {
+            const auto x = bounds.getX() + 10.0f + displayWidth * static_cast<float>(i) / static_cast<float>(screenWaveform.size() - 1);
+            const auto y = centreY - juce::jlimit(-1.0f, 1.0f, screenWaveform[static_cast<size_t>(i)]) * (bounds.getHeight() * 0.38f);
+            spectrum.lineTo(x, y);
+        }
+
+        g.setColour(juce::Colour(mint).withAlpha(0.22f));
+        g.strokePath(spectrum, juce::PathStrokeType(10.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(mint));
+        g.strokePath(spectrum, juce::PathStrokeType(2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
 
     g.setColour(juce::Colour(cream).withAlpha(0.7f));
     g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
-    g.drawText("OUTPUT SCOPE", bounds.reduced(14.0f).toNearestInt(), juce::Justification::topLeft);
+    g.drawText(compressorView ? "GAIN REDUCTION" : "OUTPUT SCOPE", bounds.reduced(14.0f).toNearestInt(), juce::Justification::topLeft);
     g.drawText("SLOT " + juce::String(selectedSlot + 1), bounds.reduced(14.0f).toNearestInt(), juce::Justification::bottomRight);
 }
 
@@ -994,14 +1237,14 @@ void SpectralRotAudioProcessorEditor::paint(juce::Graphics& g)
     drawImageToFill(g, presetPlateImage(), { 533.0f, 29.0f, 414.0f, 164.0f });
     drawImageWithin(g, inputBadgeImage(), { 34.0f, 34.0f, 140.0f, 140.0f });
     drawImageWithin(g, outputBadgeImage(), { 1301.0f, 34.0f, 140.0f, 140.0f });
-    drawImageToFill(g, globalBusImage(), { 192.0f, 680.0f, 1096.0f, 290.0f });
+    drawImageToFill(g, globalBusImage(), { 192.0f, 682.0f, 1096.0f, 290.0f });
 
     auto& state = processor.getValueTreeState();
 
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < static_cast<int>(slotBounds.size()); ++i)
     {
         const auto slot = slotBounds[static_cast<size_t>(i)].toFloat();
-        const auto modeIndex = juce::jlimit(0, 2, static_cast<int>(state.getRawParameterValue("slot" + juce::String(i + 1) + "Mode")->load()));
+        const auto modeIndex = juce::jlimit(0, 3, static_cast<int>(state.getRawParameterValue("slot" + juce::String(i + 1) + "Mode")->load()));
         const auto enabled = state.getRawParameterValue("slot" + juce::String(i + 1) + "On")->load() > 0.5f;
         const auto selected = i == selectedSlot;
         const auto held = draggingSlot && draggedSlot == i;
@@ -1026,7 +1269,11 @@ void SpectralRotAudioProcessorEditor::paint(juce::Graphics& g)
     const auto selectedMode = selectedSlotModeIndex();
     drawImageWithin(g, pedalImageForMode(selectedMode), modePedalBoundsForIndex(selectedMode));
     drawImageWithin(g, harmonizerPedalImage(), { 1083.0f, 170.0f, 348.0f, 533.0f });
-    drawScreen(g, scopeBoundsForModeIndex(selectedMode));
+    drawScreen(g, scopeBoundsForModeIndex(selectedMode), selectedMode == 3);
+
+    g.setColour(juce::Colour(cream).withAlpha(0.86f));
+    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    g.drawText("v0.1.5", juce::Rectangle<int>(1276, 902, 120, 26), juce::Justification::centred);
 }
 
 void SpectralRotAudioProcessorEditor::resized()
@@ -1057,12 +1304,14 @@ void SpectralRotAudioProcessorEditor::resized()
         box.setBounds(bounds.reduced(6, 24));
     };
 
-    slotBounds[0] = juce::Rectangle<int>(102, 137, 286, 150);
-    slotBounds[1] = juce::Rectangle<int>(102, 330, 286, 150);
-    slotBounds[2] = juce::Rectangle<int>(102, 526, 286, 150);
+    slotBounds[0] = juce::Rectangle<int>(102, 137, 286, 128);
+    slotBounds[1] = juce::Rectangle<int>(102, 282, 286, 128);
+    slotBounds[2] = juce::Rectangle<int>(102, 429, 286, 128);
+    slotBounds[3] = juce::Rectangle<int>(102, 575, 286, 128);
     layoutSlot(slotBounds[0], slot1Button, slot1Box);
     layoutSlot(slotBounds[1], slot2Button, slot2Box);
     layoutSlot(slotBounds[2], slot3Button, slot3Box);
+    layoutSlot(slotBounds[3], slot4Button, slot4Box);
 
     placeSmallKnob(inputGainLabel, inputGainSlider, 103, 47);
     placeSmallKnob(outputLabel, outputSlider, 1371, 46);
@@ -1070,6 +1319,7 @@ void SpectralRotAudioProcessorEditor::resized()
     const auto isGlass = selectedSlotModeIndex() == 2;
     const auto isMelt = selectedSlotModeIndex() == 0;
     const auto isRust = selectedSlotModeIndex() == 1;
+    const auto isSquash = selectedSlotModeIndex() == 3;
 
     juce::Slider* sliders[] = {
         &driveSlider, &rotSlider, &lockSlider, &tiltSlider, &subGuardSlider, &reverseSlider, &glassMixSlider
@@ -1101,6 +1351,16 @@ void SpectralRotAudioProcessorEditor::resized()
         modePositions[5] = { 827, 227 };
         modePositions[6] = { 835, 398 };
     }
+    else if (isSquash)
+    {
+        modePositions[0] = { 652, 233 };
+        modePositions[1] = { 821, 233 };
+        modePositions[2] = { 652, 365 };
+        modePositions[3] = { 821, 365 };
+        modePositions[4] = { 821, 365 };
+        modePositions[5] = { 821, 365 };
+        modePositions[6] = { 835, 398 };
+    }
     else
     {
         modePositions[0] = { 639, 230 };
@@ -1114,7 +1374,7 @@ void SpectralRotAudioProcessorEditor::resized()
 
     for (int i = 0; i < 7; ++i)
     {
-        const auto visible = i < (isGlass ? 7 : (isMelt ? 4 : 5));
+        const auto visible = i < (isGlass ? 7 : (isMelt || isSquash ? 4 : 5));
         labels[i]->setVisible(visible);
         sliders[i]->setVisible(visible);
 
@@ -1134,14 +1394,22 @@ void SpectralRotAudioProcessorEditor::resized()
     edgePreButton.setBounds(599, 518, 93, 28);
     edgePreButton.setVisible(isRust);
     harmonizerButton.setBounds(1133, 212, 110, 26);
-    freezeButton.setBounds(1276, 902, 120, 26);
-
     placeSmallKnob(harmonizerPitchLabel, harmonizerPitchSlider, 1194, 256);
     placeSmallKnob(harmonizerMixLabel, harmonizerMixSlider, 1194, 358);
 
     harmonizer2Button.setBounds(1271, 212, 110, 26);
     placeSmallKnob(harmonizer2PitchLabel, harmonizer2PitchSlider, 1320, 256);
     placeSmallKnob(harmonizer2MixLabel, harmonizer2MixSlider, 1320, 358);
+
+    compressorButton.setVisible(false);
+    compressorTameLabel.setVisible(false);
+    compressorTameSlider.setVisible(false);
+    compressorThresholdLabel.setVisible(false);
+    compressorThresholdSlider.setVisible(false);
+    compressorFocusLabel.setVisible(false);
+    compressorFocusSlider.setVisible(false);
+    compressorSpeedLabel.setVisible(false);
+    compressorSpeedSlider.setVisible(false);
 
     juce::Slider* globalSliders[] = { &lowHoldSlider, &lowPassSlider, &mixSlider, &widthSlider };
     juce::Label* globalLabels[] = { &lowHoldLabel, &lowPassLabel, &mixLabel, &widthLabel };

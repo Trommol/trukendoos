@@ -14,7 +14,7 @@ The initial build includes:
 - FFT-based spectral processing.
 - `Melt` mode for smoother spectral saturation.
 - `Rust` mode for unstable bin folding.
-- `Glass` mode for spectral delay/freeze textures.
+- `Glass` mode for spectral delay and smeared spectral textures.
 - `Drive`, `Rot`, `Lock`, `Tilt`, `Sub Guard`, `Mix`, and `Output`.
 
 ## Build
